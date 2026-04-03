@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Conversor Viva Mar v7.3 (Standalone)</title>
+  <title>Conversor Viva Mar v7.5</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#f0f4f0; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; padding:24px; }
-    .box { background:#fff; padding:28px; border-radius:18px; box-shadow:0 10px 30px rgba(0,0,0,.10); width:min(580px, 100%); border-top:5px solid #15803d; }
+    .box { background:#fff; padding:28px; border-radius:18px; box-shadow:0 10px 30px rgba(0,0,0,.10); width:min(620px, 100%); border-top:5px solid #15803d; }
     h2 { color:#15803d; margin:0 0 6px 0; font-size:20px; }
     p { color:#555; font-size:13px; margin:0 0 14px 0; line-height:1.35; }
     .drop-zone { border:2px dashed #15803d; padding:22px; border-radius:12px; margin-bottom:12px; background:#f9fff9; cursor:pointer; text-align:center; user-select:none; }
     .row { display:flex; gap:10px; align-items:center; margin:10px 0; }
-    input[type="text"] { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d7e7d7; }
+    input[type="text"], select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d7e7d7; background:#fff; }
     button { background:#15803d; color:#fff; border:none; padding:14px; border-radius:12px; width:100%; font-size:15px; font-weight:700; cursor:pointer; transition:.2s; }
     button:hover { background:#16a34a; }
     button:disabled { opacity:.55; cursor:not-allowed; }
@@ -26,10 +26,10 @@
 <body>
 
 <div class="box">
-  <h2>🔄 Conversor Viva Mar v7.3 <span class="pill">extra person OK</span></h2>
+  <h2>🔄 Conversor Viva Mar v7.5 <span class="pill">CSV + JSON</span></h2>
   <p>
     Jogue aqui o arquivo <b>bruto</b> do Cloudbeds (<b>.xlsx</b> ou <b>.csv</b>).<br/>
-    Ele extrai o quarto indicado e gera o CSV no formato que o Orçamentador reconhece.
+    Ele extrai o quarto-base e gera o tarifário em <b>CSV</b>, <b>JSON</b> ou ambos.
   </p>
 
   <div class="drop-zone" id="dropZone">
@@ -42,10 +42,18 @@
     <input id="roomHint" type="text" value="Suíte com Varanda" />
   </div>
   <p class="muted" style="margin-top:-6px;">
-    Se o nome mudar no Cloudbeds, ajuste aqui (ex: "UH15", "Suíte sem Varanda", etc.)
+    Se o nome mudar no Cloudbeds, ajuste aqui.
   </p>
 
-  <button id="btn" disabled>GERAR ARQUIVO PARA ORÇAMENTADOR</button>
+  <div class="row">
+    <select id="outputFormat">
+      <option value="both" selected>CSV + JSON</option>
+      <option value="json">Somente JSON</option>
+      <option value="csv">Somente CSV</option>
+    </select>
+  </div>
+
+  <button id="btn" disabled>GERAR ARQUIVO(S)</button>
   <div id="status"></div>
   <div id="log"></div>
 </div>
@@ -60,16 +68,19 @@
   const statusEl = document.getElementById('status');
   const logEl = document.getElementById('log');
   const roomHintEl = document.getElementById('roomHint');
+  const outputFormatEl = document.getElementById('outputFormat');
 
   let currentFile = null;
 
-  function setStatus(msg, isWarn=false) {
+  function setStatus(msg, isWarn = false) {
     statusEl.innerHTML = isWarn ? `<span class="warn">⚠️ ${msg}</span>` : `✅ ${msg}`;
   }
+
   function setLog(msg) {
     logEl.style.display = 'block';
     logEl.textContent = msg;
   }
+
   function clearLog() {
     logEl.style.display = 'none';
     logEl.textContent = '';
@@ -79,10 +90,12 @@
   dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.opacity = .85; });
   dropZone.addEventListener('dragleave', () => { dropZone.style.opacity = 1; });
   dropZone.addEventListener('drop', (e) => {
-    e.preventDefault(); dropZone.style.opacity = 1;
+    e.preventDefault();
+    dropZone.style.opacity = 1;
     const f = e.dataTransfer.files?.[0];
     if (f) onPickFile(f);
   });
+
   elFile.addEventListener('change', () => {
     const f = elFile.files?.[0];
     if (f) onPickFile(f);
@@ -115,15 +128,20 @@
       }
 
       const roomHint = (roomHintEl.value || '').trim();
-      const result = extractSafeFromCloudbedsGrid(grid, roomHint);
+      const result = extractTariffDataFromCloudbedsGrid(grid, roomHint);
+      const format = outputFormatEl.value;
 
-      downloadTextFile(
-        "\ufeff" + result.csv,
-        "orcamento_VIVA_MAR_SAFE.csv",
-        "text/csv;charset=utf-8;"
-      );
+      if (format === 'csv' || format === 'both') {
+  downloadTextFile("\ufeff" + result.csv, 'orcamento_VIVA_MAR_SAFE.csv', 'text/csv;charset=utf-8;');
+}
 
-      setStatus(`Gerado com sucesso! Datas: ${result.startDate} → ${result.endDate}. (Travados após: ${result.lockedAfter})`);
+if (format === 'json' || format === 'both') {
+  setTimeout(() => {
+    downloadTextFile(JSON.stringify(result.json, null, 2), 'tarifario_base_viva_mar.json', 'application/json;charset=utf-8;');
+  }, 500);
+}
+
+      setStatus(`Arquivo(s) gerado(s) com sucesso! Datas: ${result.startDate} → ${result.endDate}. (Travados após: ${result.lockedAfter})`);
       setLog(result.log);
 
     } catch (err) {
@@ -140,7 +158,7 @@
     const wb = XLSX.read(buf, { type: 'array' });
     const sheetName = wb.SheetNames[0];
     const ws = wb.Sheets[sheetName];
-    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "" });
+    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
   }
 
   async function readCSVAsGrid(file) {
@@ -152,11 +170,10 @@
   function detectDelimiter(text) {
     const head = text.slice(0, 8000);
     const commas = (head.match(/,/g) || []).length;
-    const semis  = (head.match(/;/g) || []).length;
+    const semis = (head.match(/;/g) || []).length;
     return semis > commas ? ';' : ',';
   }
 
-  // CSV robusto: aspas, delimitador, quebras de linha, aspas escapadas
   function parseCSVToGrid(text, delim) {
     const rows = [];
     let row = [];
@@ -165,29 +182,43 @@
 
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
-      const next = text[i+1];
+      const next = text[i + 1];
 
       if (inQuotes) {
-        if (ch === '"' && next === '"') { cur += '"'; i++; }
-        else if (ch === '"') { inQuotes = false; }
-        else { cur += ch; }
+        if (ch === '"' && next === '"') {
+          cur += '"';
+          i++;
+        } else if (ch === '"') {
+          inQuotes = false;
+        } else {
+          cur += ch;
+        }
       } else {
         if (ch === '"') inQuotes = true;
-        else if (ch === delim) { row.push(cur); cur = ''; }
-        else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
-        else if (ch === '\r') { /* ignore */ }
-        else { cur += ch; }
+        else if (ch === delim) {
+          row.push(cur);
+          cur = '';
+        } else if (ch === '\n') {
+          row.push(cur);
+          rows.push(row);
+          row = [];
+          cur = '';
+        } else if (ch === '\r') {
+          // ignore
+        } else {
+          cur += ch;
+        }
       }
     }
+
     row.push(cur);
     rows.push(row);
     return rows.map(r => r.map(c => String(c ?? '').trim()));
   }
 
-  function extractSafeFromCloudbedsGrid(grid, roomHint) {
+  function extractTariffDataFromCloudbedsGrid(grid, roomHint) {
     const norm = (v) => String(v ?? '').trim();
 
-    // 1) Linha de datas (DD/MM/AAAA)
     const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
     let bestRowIdx = -1;
     let bestCount = 0;
@@ -195,9 +226,15 @@
     for (let r = 0; r < grid.length; r++) {
       const row = grid[r] || [];
       let count = 0;
-      for (const cell of row) if (dateRe.test(norm(cell))) count++;
-      if (count > bestCount) { bestCount = count; bestRowIdx = r; }
+      for (const cell of row) {
+        if (dateRe.test(norm(cell))) count++;
+      }
+      if (count > bestCount) {
+        bestCount = count;
+        bestRowIdx = r;
+      }
     }
+
     if (bestRowIdx === -1 || bestCount < 7) {
       throw new Error('Não encontrei uma linha de datas DD/MM/AAAA forte o suficiente no arquivo.');
     }
@@ -205,6 +242,7 @@
     const dateRow = (grid[bestRowIdx] || []).map(norm);
     const dateIndices = [];
     const isoDates = [];
+
     for (let c = 0; c < dateRow.length; c++) {
       const cell = dateRow[c];
       if (dateRe.test(cell)) {
@@ -214,27 +252,48 @@
       }
     }
 
-    // 2) Bloco do quarto
     const hint = (roomHint || '').toLowerCase();
-    if (!hint) throw new Error('Nome do quarto vazio. Preencha o campo (ex: "Suíte com Varanda").');
+    if (!hint) {
+      throw new Error('Nome do quarto vazio. Preencha o campo do quarto.');
+    }
 
     let roomStart = -1;
     for (let r = 0; r < grid.length; r++) {
-      const row = grid[r] || [];
-      const joined = row.map(norm).join(' ').toLowerCase();
-      if (joined.includes(hint)) { roomStart = r; break; }
+      const joined = (grid[r] || []).map(norm).join(' ').toLowerCase();
+      if (joined.includes(hint)) {
+        roomStart = r;
+        break;
+      }
     }
-    if (roomStart === -1) throw new Error(`Não encontrei o bloco do quarto contendo: "${roomHint}".`);
 
-    // 2.1) Fim do bloco (heurística segura)
+    if (roomStart === -1) {
+      throw new Error(`Não encontrei o bloco do quarto contendo: "${roomHint}".`);
+    }
+
     let roomEnd = grid.length;
-    const isLabelLine = (lineLower) => ['tarif', 'estadia', 'fechado para', 'invent', 'dispon', 'bloque', 'acomoda', 'preço para o adulto', 'preco para o adulto'].some(k => lineLower.includes(k));
+
+    const isLabelLine = (lineLower) => {
+      return [
+        'tarif',
+        'estadia',
+        'fechado para',
+        'invent',
+        'dispon',
+        'bloque',
+        'acomoda',
+        'preço para o adulto',
+        'preco para o adulto'
+      ].some(k => lineLower.includes(k));
+    };
+
     for (let r = roomStart + 1; r < grid.length; r++) {
       const lineLower = (grid[r] || []).map(norm).join(' ').toLowerCase();
       if (!lineLower) continue;
 
       const looksLikeRoomTitle =
-        (lineLower.includes('suíte') || lineLower.includes('suite') || /\buh\d+\b/i.test(lineLower));
+        lineLower.includes('suíte') ||
+        lineLower.includes('suite') ||
+        /\buh\d+\b/i.test(lineLower);
 
       if (looksLikeRoomTitle && !lineLower.includes(hint) && !isLabelLine(lineLower)) {
         roomEnd = r;
@@ -242,45 +301,46 @@
       }
     }
 
-    // 3) Linhas-alvo (busca na linha inteira)
     const labelIndex = {};
     const labelsWanted = [
-      { key: 'price',   names: ['tarifário base', 'tarifario base', 'base rate', 'tarifa base'] },
-      { key: 'adult3',  names: ['preço para o adulto 3', 'preco para o adulto 3', 'adult 3'] }, // pessoa extra
+      { key: 'price', names: ['tarifário base', 'tarifario base', 'base rate', 'tarifa base'] },
+      { key: 'adult3', names: ['preço para o adulto 3', 'preco para o adulto 3', 'adult 3'] },
       { key: 'minstay', names: ['estadia mínima', 'estadia minima', 'minimum stay', 'min stay'] },
-      { key: 'cta',     names: ['fechado para chegada', 'closed to arrival', 'cta'] },
-      { key: 'ctd',     names: ['fechado para partida', 'closed to departure', 'ctd'] },
+      { key: 'cta', names: ['fechado para chegada', 'closed to arrival', 'cta'] },
+      { key: 'ctd', names: ['fechado para partida', 'closed to departure', 'ctd'] },
     ];
 
     for (let r = roomStart; r < roomEnd; r++) {
       const hay = (grid[r] || []).map(norm).join(' ').toLowerCase();
       if (!hay) continue;
+
       for (const w of labelsWanted) {
         if (labelIndex[w.key] != null) continue;
-        if (w.names.some(nm => hay.includes(nm))) labelIndex[w.key] = r;
+        if (w.names.some(nm => hay.includes(nm))) {
+          labelIndex[w.key] = r;
+        }
       }
     }
 
-    // ✅ sem fallback fixo: adulto3 é obrigatório
     const requiredKeys = ['price', 'adult3', 'minstay', 'cta', 'ctd'];
     const missing = requiredKeys.filter(k => labelIndex[k] == null);
+
     if (missing.length) {
-      // gera uma prévia do bloco pra facilitar debug em caso do Cloudbeds mudar texto
       const previewLines = [];
       const maxPreview = Math.min(roomEnd, roomStart + 40);
+
       for (let r = roomStart; r < maxPreview; r++) {
-        const row = grid[r] || [];
-        const text = row.map(norm).filter(Boolean).join(' | ');
-        if (text) previewLines.push(`L${r+1}: ${text}`);
+        const text = (grid[r] || []).map(norm).filter(Boolean).join(' | ');
+        if (text) previewLines.push(`L${r + 1}: ${text}`);
       }
+
       throw new Error(
         `Encontrei o quarto "${roomHint}", mas não encontrei as linhas: ${missing.join(', ')}.\n\n` +
-        `Prévia do bloco (primeiras linhas):\n` +
+        `Prévia do bloco:\n` +
         previewLines.join('\n')
       );
     }
 
-    // 4) Extrair valores pelas colunas de datas
     const getByRowAndDates = (rIdx) => {
       const row = grid[rIdx] || [];
       return dateIndices.map(c => norm(row[c] ?? ''));
@@ -288,18 +348,21 @@
 
     const pricesRaw = getByRowAndDates(labelIndex.price);
     const adult3Raw = getByRowAndDates(labelIndex.adult3);
-    const minRaw    = getByRowAndDates(labelIndex.minstay);
-    const ctaRaw    = getByRowAndDates(labelIndex.cta);
-    const ctdRaw    = getByRowAndDates(labelIndex.ctd);
+    const minRaw = getByRowAndDates(labelIndex.minstay);
+    const ctaRaw = getByRowAndDates(labelIndex.cta);
+    const ctdRaw = getByRowAndDates(labelIndex.ctd);
 
-    // 5) Normalizações
     const parseMoney = (s) => {
       let t = String(s || '').trim();
       if (!t) return 0;
       t = t.replace(/[^\d,.-]/g, '');
-      // BR: 1.200,00
-      if (t.includes(',') && t.includes('.')) t = t.replace(/\./g, '').replace(',', '.');
-      else if (t.includes(',')) t = t.replace(',', '.');
+
+      if (t.includes(',') && t.includes('.')) {
+        t = t.replace(/\./g, '').replace(',', '.');
+      } else if (t.includes(',')) {
+        t = t.replace(',', '.');
+      }
+
       const v = Number(t);
       return Number.isFinite(v) ? v : 0;
     };
@@ -312,18 +375,19 @@
     const parseBool01 = (s) => {
       const t = String(s || '').trim().toLowerCase();
       if (!t) return 0;
-      return ['1','true','yes','y','sim','s','fechado','closed'].includes(t) ? 1 : 0;
+      return ['1', 'true', 'yes', 'y', 'sim', 's', 'fechado', 'closed'].includes(t) ? 1 : 0;
     };
 
     let prices = pricesRaw.map(parseMoney);
-    let adult3 = adult3Raw.map(parseMoney).map(v => Math.round(v)); // 90, 110...
-    let mins   = minRaw.map(parseIntSafe);
-    let cta    = ctaRaw.map(parseBool01);
-    let ctd    = ctdRaw.map(parseBool01);
+    let adult3 = adult3Raw.map(parseMoney).map(v => Math.round(v));
+    let mins = minRaw.map(parseIntSafe);
+    let cta = ctaRaw.map(parseBool01);
+    let ctd = ctdRaw.map(parseBool01);
 
-    // 6) Regra de segurança: após última data com preço > 0, travar tudo
     let lastValid = -1;
-    for (let i = 0; i < prices.length; i++) if (prices[i] > 0) lastValid = i;
+    for (let i = 0; i < prices.length; i++) {
+      if (prices[i] > 0) lastValid = i;
+    }
 
     for (let i = lastValid + 1; i < prices.length; i++) {
       prices[i] = 0;
@@ -333,7 +397,10 @@
       ctd[i] = 1;
     }
 
-    // 7) CSV no formato que o Orçamentador reconhece
+    const startDate = isoDates[0];
+    const endDate = isoDates[isoDates.length - 1];
+    const lockedAfter = lastValid >= 0 ? isoDates[lastValid] : '(nenhuma data válida)';
+
     const fmtBR = (n) => Number(n).toFixed(2).replace('.', ',');
 
     let csv = '';
@@ -344,9 +411,24 @@
     csv += 'Fechado para Chegada;' + cta.map(v => String(v)).join(';') + '\n';
     csv += 'Fechado para Partida;' + ctd.map(v => String(v)).join(';') + '\n';
 
-    const startDate = isoDates[0];
-    const endDate = isoDates[isoDates.length - 1];
-    const lockedAfter = (lastValid >= 0) ? isoDates[lastValid] : '(nenhuma data válida)';
+    const json = {
+      roomName: roomHint,
+      role: 'base_room',
+      generatedAt: new Date().toISOString(),
+      dateRange: {
+        start: startDate,
+        end: endDate
+      },
+      rules: {
+        lockAfterLastValidPrice: true
+      },
+      dates: isoDates,
+      baseRate: prices,
+      adult3Rate: adult3,
+      minStay: mins,
+      cta: cta,
+      ctd: ctd
+    };
 
     const log =
 `Arquivo interpretado:
@@ -355,18 +437,18 @@
 - Bloco analisado: linhas ${roomStart + 1} até ${roomEnd} (aprox.)
 
 Linhas encontradas:
-- Tarifário base:       L${labelIndex.price + 1}
-- Preço adulto 3 (extra) L${labelIndex.adult3 + 1}
-- Estadia mínima:       L${labelIndex.minstay + 1}
-- Fechado p/ Chegada:   L${labelIndex.cta + 1}
-- Fechado p/ Partida:   L${labelIndex.ctd + 1}
+- Tarifário base:         L${labelIndex.price + 1}
+- Preço adulto 3 (extra): L${labelIndex.adult3 + 1}
+- Estadia mínima:         L${labelIndex.minstay + 1}
+- Fechado p/ Chegada:     L${labelIndex.cta + 1}
+- Fechado p/ Partida:     L${labelIndex.ctd + 1}
 
 Regra de segurança aplicada:
 - Última data com preço > 0: ${lockedAfter}
 - A partir do dia seguinte: base=0, adulto3=0, minstay=0, CTA=1, CTD=1
 `;
 
-    return { csv, startDate, endDate, lockedAfter, log };
+    return { csv, json, startDate, endDate, lockedAfter, log };
   }
 
   function downloadTextFile(text, filename, mime) {

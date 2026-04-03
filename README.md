@@ -21,3 +21,10 @@ Conversor standalone em HTML para transformar o arquivo bruto de disponibilidade
 
 ## Versão atual
 v7.3 Golden
+## Status
+Versão: v7.5 (estável)
+
+Este conversor está finalizado e em uso em produção.
+
+Para integração com o Orçamentador via JSON, ver projeto:
+[link ou referência]
