@@ -3,15 +3,17 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Conversor Viva Mar v7.5</title>
+  <title>Conversor Viva Mar v7.6</title>
   <style>
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#f0f4f0; display:flex; justify-content:center; align-items:center; min-height:100vh; margin:0; padding:24px; }
-    .box { background:#fff; padding:28px; border-radius:18px; box-shadow:0 10px 30px rgba(0,0,0,.10); width:min(620px, 100%); border-top:5px solid #15803d; }
+    .box { background:#fff; padding:28px; border-radius:18px; box-shadow:0 10px 30px rgba(0,0,0,.10); width:min(700px, 100%); border-top:5px solid #15803d; }
     h2 { color:#15803d; margin:0 0 6px 0; font-size:20px; }
     p { color:#555; font-size:13px; margin:0 0 14px 0; line-height:1.35; }
     .drop-zone { border:2px dashed #15803d; padding:22px; border-radius:12px; margin-bottom:12px; background:#f9fff9; cursor:pointer; text-align:center; user-select:none; }
     .row { display:flex; gap:10px; align-items:center; margin:10px 0; }
-    input[type="text"], select { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d7e7d7; background:#fff; }
+    .col { display:flex; flex-direction:column; gap:6px; flex:1; }
+    input[type="text"], select, textarea { width:100%; padding:10px 12px; border-radius:10px; border:1px solid #d7e7d7; background:#fff; box-sizing:border-box; }
+    textarea { min-height:96px; resize:vertical; }
     button { background:#15803d; color:#fff; border:none; padding:14px; border-radius:12px; width:100%; font-size:15px; font-weight:700; cursor:pointer; transition:.2s; }
     button:hover { background:#16a34a; }
     button:disabled { opacity:.55; cursor:not-allowed; }
@@ -21,15 +23,16 @@
     .warn { color:#8a2c0c; }
     .small { font-size:12px; color:#666; }
     .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#eef8ee; border:1px solid #d7e7d7; font-size:12px; color:#1f2937; margin-left:6px; }
+    label { font-size:12px; font-weight:700; color:#374151; }
   </style>
 </head>
 <body>
 
 <div class="box">
-  <h2>🔄 Conversor Viva Mar v7.5 <span class="pill">CSV + JSON</span></h2>
+  <h2>🔄 Conversor Viva Mar v7.6 <span class="pill">JSON oficial</span></h2>
   <p>
     Jogue aqui o arquivo <b>bruto</b> do Cloudbeds (<b>.xlsx</b> ou <b>.csv</b>).<br/>
-    Ele extrai o quarto-base e gera o tarifário em <b>CSV</b>, <b>JSON</b> ou ambos.
+    Ele extrai o quarto-base e gera o <b>dados.json</b> compatível com o Orçamentador, além do CSV opcional.
   </p>
 
   <div class="drop-zone" id="dropZone">
@@ -39,18 +42,38 @@
   </div>
 
   <div class="row">
-    <input id="roomHint" type="text" value="Suíte com Varanda" />
+    <div class="col">
+      <label for="roomHint">Quarto-base</label>
+      <input id="roomHint" type="text" value="Suíte com Varanda" />
+    </div>
+    <div class="col">
+      <label for="outputFormat">Saída</label>
+      <select id="outputFormat">
+        <option value="both" selected>CSV + JSON</option>
+        <option value="json">Somente JSON</option>
+        <option value="csv">Somente CSV</option>
+      </select>
+    </div>
   </div>
-  <p class="muted" style="margin-top:-6px;">
-    Se o nome mudar no Cloudbeds, ajuste aqui.
-  </p>
 
   <div class="row">
-    <select id="outputFormat">
-      <option value="both" selected>CSV + JSON</option>
-      <option value="json">Somente JSON</option>
-      <option value="csv">Somente CSV</option>
-    </select>
+    <div class="col">
+      <label for="versionInput">Version</label>
+      <input id="versionInput" type="text" />
+    </div>
+    <div class="col">
+      <label for="updatedAtInput">UpdatedAt</label>
+      <input id="updatedAtInput" type="text" />
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col">
+      <label for="messageTemplate">MessageTemplate</label>
+      <textarea id="messageTemplate">Olá! Segue a simulação da hospedagem solicitada.
+
+Qualquer dúvida ou ajuste, estou à disposição.</textarea>
+    </div>
   </div>
 
   <button id="btn" disabled>GERAR ARQUIVO(S)</button>
@@ -69,8 +92,26 @@
   const logEl = document.getElementById('log');
   const roomHintEl = document.getElementById('roomHint');
   const outputFormatEl = document.getElementById('outputFormat');
+  const versionInputEl = document.getElementById('versionInput');
+  const updatedAtInputEl = document.getElementById('updatedAtInput');
+  const messageTemplateEl = document.getElementById('messageTemplate');
 
   let currentFile = null;
+
+  function todayLocalISODate() {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function defaultVersion() {
+    return `${todayLocalISODate()}-01`;
+  }
+
+  versionInputEl.value = defaultVersion();
+  updatedAtInputEl.value = todayLocalISODate();
 
   function setStatus(msg, isWarn = false) {
     statusEl.innerHTML = isWarn ? `<span class="warn">⚠️ ${msg}</span>` : `✅ ${msg}`;
@@ -128,18 +169,42 @@
       }
 
       const roomHint = (roomHintEl.value || '').trim();
-      const result = extractTariffDataFromCloudbedsGrid(grid, roomHint);
+      const version = (versionInputEl.value || '').trim();
+      const updatedAt = (updatedAtInputEl.value || '').trim();
+      const messageTemplate = String(messageTemplateEl.value || '').trim();
+
+      if (!/^\d{4}-\d{2}-\d{2}-\d+$/.test(version)) {
+        throw new Error('Version inválida. Use o formato YYYY-MM-DD-N, por exemplo 2026-04-03-01.');
+      }
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(updatedAt)) {
+        throw new Error('UpdatedAt inválido. Use o formato YYYY-MM-DD.');
+      }
+
+      if (!messageTemplate) {
+        throw new Error('MessageTemplate não pode ficar vazio.');
+      }
+
+      const result = extractTariffDataFromCloudbedsGrid(grid, roomHint, version, updatedAt, messageTemplate);
       const format = outputFormatEl.value;
 
       if (format === 'csv' || format === 'both') {
-  downloadTextFile("\ufeff" + result.csv, 'orcamento_VIVA_MAR_SAFE.csv', 'text/csv;charset=utf-8;');
-}
+        downloadTextFile(
+          "\ufeff" + result.csv,
+          'orcamento_VIVA_MAR_SAFE.csv',
+          'text/csv;charset=utf-8;'
+        );
+      }
 
-if (format === 'json' || format === 'both') {
-  setTimeout(() => {
-    downloadTextFile(JSON.stringify(result.json, null, 2), 'tarifario_base_viva_mar.json', 'application/json;charset=utf-8;');
-  }, 500);
-}
+      if (format === 'json' || format === 'both') {
+        setTimeout(() => {
+          downloadTextFile(
+            JSON.stringify(result.json, null, 2),
+            'dados.json',
+            'application/json;charset=utf-8;'
+          );
+        }, format === 'both' ? 500 : 0);
+      }
 
       setStatus(`Arquivo(s) gerado(s) com sucesso! Datas: ${result.startDate} → ${result.endDate}. (Travados após: ${result.lockedAfter})`);
       setLog(result.log);
@@ -204,7 +269,6 @@ if (format === 'json' || format === 'both') {
           row = [];
           cur = '';
         } else if (ch === '\r') {
-          // ignore
         } else {
           cur += ch;
         }
@@ -216,7 +280,7 @@ if (format === 'json' || format === 'both') {
     return rows.map(r => r.map(c => String(c ?? '').trim()));
   }
 
-  function extractTariffDataFromCloudbedsGrid(grid, roomHint) {
+  function extractTariffDataFromCloudbedsGrid(grid, roomHint, version, updatedAt, messageTemplate) {
     const norm = (v) => String(v ?? '').trim();
 
     const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
@@ -307,7 +371,7 @@ if (format === 'json' || format === 'both') {
       { key: 'adult3', names: ['preço para o adulto 3', 'preco para o adulto 3', 'adult 3'] },
       { key: 'minstay', names: ['estadia mínima', 'estadia minima', 'minimum stay', 'min stay'] },
       { key: 'cta', names: ['fechado para chegada', 'closed to arrival', 'cta'] },
-      { key: 'ctd', names: ['fechado para partida', 'closed to departure', 'ctd'] },
+      { key: 'ctd', names: ['fechado para partida', 'closed to departure', 'ctd'] }
     ];
 
     for (let r = roomStart; r < roomEnd; r++) {
@@ -411,23 +475,23 @@ if (format === 'json' || format === 'both') {
     csv += 'Fechado para Chegada;' + cta.map(v => String(v)).join(';') + '\n';
     csv += 'Fechado para Partida;' + ctd.map(v => String(v)).join(';') + '\n';
 
+    const daily = {};
+    for (let i = 0; i < isoDates.length; i++) {
+      const date = isoDates[i];
+      daily[date] = {
+        base: Number(prices[i] || 0),
+        extra: Number(adult3[i] || 0),
+        minStay: Number(mins[i] || 0),
+        cta: Number(cta[i] || 0),
+        ctd: Number(ctd[i] || 0)
+      };
+    }
+
     const json = {
-      roomName: roomHint,
-      role: 'base_room',
-      generatedAt: new Date().toISOString(),
-      dateRange: {
-        start: startDate,
-        end: endDate
-      },
-      rules: {
-        lockAfterLastValidPrice: true
-      },
-      dates: isoDates,
-      baseRate: prices,
-      adult3Rate: adult3,
-      minStay: mins,
-      cta: cta,
-      ctd: ctd
+      version,
+      updatedAt,
+      messageTemplate,
+      daily
     };
 
     const log =
@@ -443,9 +507,15 @@ Linhas encontradas:
 - Fechado p/ Chegada:     L${labelIndex.cta + 1}
 - Fechado p/ Partida:     L${labelIndex.ctd + 1}
 
+JSON oficial:
+- version: ${version}
+- updatedAt: ${updatedAt}
+- messageTemplate: ${messageTemplate.length} caracteres
+- datas em daily: ${isoDates.length}
+
 Regra de segurança aplicada:
 - Última data com preço > 0: ${lockedAfter}
-- A partir do dia seguinte: base=0, adulto3=0, minstay=0, CTA=1, CTD=1
+- A partir do dia seguinte: base=0, extra=0, minStay=0, CTA=1, CTD=1
 `;
 
     return { csv, json, startDate, endDate, lockedAfter, log };

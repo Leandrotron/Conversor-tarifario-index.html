@@ -28,3 +28,5 @@ Este conversor está finalizado e em uso em produção.
 
 Para integração com o Orçamentador via JSON, ver projeto:
 [link ou referência]
+## Versão atual
+7.6 correcoes no formato de arq
